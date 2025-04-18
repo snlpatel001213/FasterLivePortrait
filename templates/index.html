@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Portrait Studio</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* ... (Your existing styles - keep these) ... */
+        .blinking {
+            background-color: rgb(255, 0, 0) !important;
+        }
+
+        #captured-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none;
+            /* Initially hidden */
+        }
+
+        body,
+        html {
+            height: 100%;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        .full-screen {
+            width: 100%;
+            height: 100vh;
+            position: relative;
+        }
+
+        #webcam-view {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* Modified to use flexbox for layout */
+        #input-selections-container {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 15%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+        }
+
+        #video-selection,
+        #image-selection,
+        #audio-selection {
+            width: 100%;
+            height: 100%;
+            padding: 10px;
+            overflow-y: auto;
+            display: none;
+            /* Initially hide all selections */
+        }
+
+        .video-preview,
+        .image-preview,
+        .audio-preview {
+            width: 100%;
+            margin-bottom: 10px;
+            border: 2px solid transparent;
+            cursor: pointer;
+        }
+
+        .video-preview.selected,
+        .image-preview.selected,
+        .audio-preview.selected {
+            border: 2px solid greenyellow;
+            box-shadow: 0 0 10px greenyellow;
+        }
+
+        #drawer-panel {
+            position: absolute;
+            top: 0;
+            left: -20%;
+            width: 15%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            transition: left 0.3s ease;
+            padding: 10px;
+            overflow-y: auto;
+        }
+
+        #drawer-panel.open {
+            left: 0;
+        }
+
+        #drawer-toggle {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: gold;
+            text-shadow: 0 0 5px gold;
+            font-size: 10em;
+            /* Increase arrow size */
+        }
+
+        .sample-image {
+            width: 100%;
+            margin-bottom: 20px;
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 5px;
+            cursor: pointer;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 30px;
+            width: 100%;
+            text-align: center;
+        }
+
+        /* ... (your existing styles - keep these) ... */
+        #output-video-container,
+        #output-image-container {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            /* Match full-screen height */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #output-play-button {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            font-size: 2em;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            z-index: 10;
+        }
+
+        #output-video,
+        #output-image {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        #output-container {
+            display: none;
+        }
+
+        #webcam-title {
+            position: absolute;
+            top: 5%;
+            left: 40%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 2em;
+            text-align: center;
+            z-index: 10;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            transition: left 0.3s ease, transform 0.3s ease;
+            /* Smooth transition */
+        }
+
+        #acknowledgement {
+            position: absolute;
+            bottom: 5px;
+            width: 100%;
+            text-align: center;
+            font-size: 10px;
+            color: white;
+            /* Adjust color as needed */
+        }
+
+        #drawer-panel.open+#webcam-title {
+            left: calc(50% + 10%);
+            /* Adjust for drawer width */
+            transform: translate(-60%, -50%);
+            /* Adjust transform */
+        }
+
+        #mode-selection {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 50px;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            display: none;
+            /* Hide the mode selection buttons */
+        }
+
+        #mode-selection button {
+            margin: 0 10px;
+            padding: 5px 15px;
+            cursor: pointer;
+        }
+
+        .audio-container {
+            position: relative;
+            margin-bottom: 10px;
+            /* Add spacing between audio elements */
+        }
+
+        .audio-checkbox {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            z-index: 10;
+        }
+    </style>
+
+</head>
+
+<body>
+    <div class="full-screen" id="page-1">
+        <div id="mode-selection">
+            <button class="btn btn-primary" data-mode="image_to_video">Image to Video</button>
+            <button class="btn btn-success" data-mode="image_to_image">Image to Image</button>
+            <button class="btn btn-warning" data-mode="speech_to_video">Speech to Video</button>
+        </div>
+        <video id="webcam-view" autoplay playsinline></video>
+        <div id="webcam-title" style="text-shadow: 5px 5px 8px #237c0e;">AI Live Portrait - Bring Portraits to Life!
+        </div>
+        <div id="input-selections-container">
+            <div id="video-selection">
+                <video class="video-preview driving-input" data-type="video" data-path="d0.mp4"
+                    src="/static/driving/d0.mp4" controls muted loop></video>
+                <video class="video-preview driving-input" data-type="video" data-path="d3.mp4"
+                    src="/static/driving/d3.mp4" controls muted loop></video>
+                <video class="video-preview driving-input" data-type="video" data-path="d6.mp4"
+                    src="/static/driving/d6.mp4" controls muted loop></video>
+                <video class="video-preview driving-input" data-type="video" data-path="d9.mp4"
+                    src="/static/driving/d9.mp4" controls muted loop></video>
+                <video class="video-preview driving-input" data-type="video" data-path="d10.mp4"
+                    src="/static/driving/d10.mp4" controls muted loop></video>
+                <video class="video-preview driving-input" data-type="video" data-path="d11.mp4"
+                    src="/static/driving/d11.mp4" controls muted loop></video>
+                <video class="video-preview driving-input" data-type="video" data-path="d12.mp4"
+                    src="/static/driving/d12.mp4" controls muted loop></video>
+                <video class="video-preview driving-input" data-type="video" data-path="d13.mp4"
+                    src="/static/driving/d13.mp4" controls muted loop></video>
+                <video class="video-preview driving-input" data-type="video" data-path="d14.mp4"
+                    src="/static/driving/d14.mp4" controls muted loop></video>
+                <video class="video-preview driving-input" data-type="video" data-path="d18.mp4"
+                    src="/static/driving/d18.mp4" controls muted loop></video>
+                <video class="video-preview driving-input" data-type="video" data-path="d19.mp4"
+                    src="/static/driving/d19.mp4" controls muted loop></video>
+            </div>
+            <!-- <div id="image-selection">
+                <img class="image-preview driving-input" data-type="image" data-src="/static/source/nm.jpg"
+                    src="/static/source/nm.jpg">
+                <img class="image-preview driving-input" data-type="image" data-src="/static/source/cc.jpg"
+                    src="/static/source/cc.jpg">
+                <img class="image-preview driving-input" data-type="image" data-src="/static/source/s1.jpg"
+                    src="/static/source/s1.jpg">
+                <img class="image-preview driving-input" data-type="image" data-src="/static/source/s2.jpg"
+                    src="/static/source/s2.jpg">
+                <img class="image-preview driving-input" data-type="image" data-src="/static/source/s3.jpg"
+                    src="/static/source/s3.jpg">
+                <img class="image-preview driving-input" data-type="image" data-src="/static/source/s4.jpg"
+                    src="/static/source/s4.jpg">
+                <img class="image-preview driving-input" data-type="image" data-src="/static/source/s5.jpg"
+                    src="/static/source/s5.jpg">
+                <img class="image-preview driving-input" data-type="image" data-src="/static/source/s6.jpg"
+                    src="/static/source/s6.jpg">
+                <img class="image-preview driving-input" data-type="image" data-src="/static/source/s7.jpg"
+                    src="/static/source/s7.jpg">
+                <img class="image-preview driving-input" data-type="image" data-src="/static/source/s8.jpg"
+                    src="/static/source/s8.jpg">
+                <img class="image-preview driving-input" data-type="image" data-src="/static/source/s9.jpg"
+                    src="/static/source/s9.jpg">
+                <img class="image-preview driving-input" data-type="image" data-src="/static/source/s10.jpg"
+                    src="/static/source/s10.jpg">
+                <img class="image-preview driving-input" data-type="image" data-src="/static/source/s11.jpg"
+                    src="/static/source/s11.jpg">
+                <img class="image-preview driving-input" data-type="image" data-src="/static/source/s12.jpg"
+                    src="/static/source/s12.jpg">
+            </div> -->
+            <div id="audio-selection" style="    height: 40%;">
+                <div class="audio-container">
+                    <p>Driving Audio 1</p>
+                    <audio class="audio-preview driving-input" data-type="audio"
+                        data-path="/static/audio/sample_audio.wav" src="/static/audio/sample_audio.wav"
+                        controls></audio>
+                    <input type="checkbox" class="audio-checkbox" data-path="sample_audio.wav">
+                </div>
+                <div class="audio-container">
+                    <p>Driving Audio 2</p>
+                    <audio class="audio-preview driving-input" data-type="audio"
+                        data-path="/static/audio/sample_audio.wav" src="/static/audio/sample_audio.wav"
+                        controls></audio>
+                    <input type="checkbox" class="audio-checkbox" data-path="sample_audio.wav">
+                </div>
+            </div>
+        </div>
+        <div id="drawer-panel">
+            <div class="sample-image source-input" data-type="image" data-src="/static/source/nm.jpg"><img
+                    src="/static/source/nm.jpg" width="100%">
+            </div>
+            <div class="sample-image source-input" data-type="image" data-src="/static/source/cc.jpg"><img
+                    src="/static/source/cc.jpg" width="100%">
+            </div>
+            <div class="sample-image source-input" data-type="image" data-src="/static/source/s1.jpg"><img
+                    src="/static/source/s1.jpg" width="100%">
+            </div>
+            <div class="sample-image source-input" data-type="image" data-src="/static/source/s2.jpg"><img
+                    src="/static/source/s2.jpg" width="100%">
+            </div>
+            <div class="sample-image source-input" data-type="image" data-src="/static/source/s3.jpg"><img
+                    src="/static/source/s3.jpg" width="100%">
+            </div>
+            <div class="sample-image source-input" data-type="image" data-src="/static/source/s4.jpg"><img
+                    src="/static/source/s4.jpg" width="100%">
+            </div>
+            <div class="sample-image source-input" data-type="image" data-src="/static/source/s5.jpg"><img
+                    src="/static/source/s5.jpg" width="100%">
+            </div>
+            <div class="sample-image source-input" data-type="image" data-src="/static/source/s6.jpg"><img
+                    src="/static/source/s6.jpg" width="100%">
+            </div>
+            <div class="sample-image source-input" data-type="image" data-src="/static/source/s7.jpg"><img
+                    src="/static/source/s7.jpg" width="100%">
+            </div>
+            <div class="sample-image source-input" data-type="image" data-src="/static/source/s8.jpg"><img
+                    src="/static/source/s8.jpg" width="100%">
+            </div>
+            <div class="sample-image source-input" data-type="image" data-src="/static/source/s9.jpg"><img
+                    src="/static/source/s9.jpg" width="100%">
+            </div>
+            <div class="sample-image source-input" data-type="image" data-src="/static/source/s10.jpg"><img
+                    src="/static/source/s10.jpg" width="100%">
+            </div>
+            <div class="sample-image source-input" data-type="image" data-src="/static/source/s11.jpg"><img
+                    src="/static/source/s11.jpg" width="100%">
+            </div>
+            <div class="sample-image source-input" data-type="image" data-src="/static/source/s12.jpg"><img
+                    src="/static/source/s12.jpg" width="100%">
+            </div>
+        </div>
+        <div id="drawer-toggle">&#171;</div>
+        <div id="controls">
+            <button class="btn btn-danger btn-lg" id="restart-btn">Restart</button>
+            <button class="btn btn-primary btn-lg gap-2 col-6 mx-auto" id="capture-btn">Capture</button>
+            <button class="btn btn-success btn-lg" id="submit-btn" style="display: none;">Submit</button>
+        </div>
+        <div id="acknowledgement">
+            LivePortrait: Efficient Portrait Animation with Stitching and Retargeting Control. Guo et al. CVPR
+            2024.
+        </div>
+    </div>
+    <div class="full-screen" id="page-2" style="display: none;">
+        <div id="output-video-container">
+            <div id="output-play-button">&#9658;</div>
+            <video id="output-video" controls playsinline></video>
+        </div>
+        <div id="output-image-container">
+            <img id="output-image">
+        </div>
+        <div id="output-controls" style="position: absolute; bottom: 50px; width: 100%; text-align: center;">
+            <button class="btn btn-danger btn-lg" id="output-restart-btn">Restart</button>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        let selectedVideoPath;
+        let selectedImagePath;
+        let selectedAudioPath;
+        let webcamStream;
+        let capturedImage;
+        let sourceDataType; // 'image' or 'webcam'
+        let drivingInputType; // 'video', 'image', or 'audio'
+        let currentMode; // image_to_video, image_to_image, speech_to_video
+        let originalWebcamElement;
+        let currentWebcamElement;
+
+        $(document).ready(function () {
+
+            const webcamVideo = document.getElementById('webcam-view');
+            const outputVideo = document.getElementById('output-video');
+            const outputImage = document.getElementById('output-image');
+            const $videoSelection = $('#video-selection');
+            const $imageSelection = $('#image-selection');
+            const $audioSelection = $('#audio-selection');
+            const $outputVideoContainer = $('#output-video-container');
+            const $outputImageContainer = $('#output-image-container');
+            const $inputSelectionsContainer = $('#input-selections-container');
+
+            $videoSelection.hide();
+            $imageSelection.hide();
+            $audioSelection.hide();
+
+            navigator.mediaDevices.getUserMedia({
+                video: true
+            })
+                .then(stream => {
+                    webcamStream = stream;
+                    webcamVideo.srcObject = stream;
+                    originalWebcamElement = webcamVideo.cloneNode(true);
+                    currentWebcamElement = webcamVideo;
+                    sourceDataType = 'webcam'; // Initial source is webcam
+                    determineMode(); // Determine initial mode
+                    updateUI();
+                })
+                .catch(error => console.error('Error accessing webcam:', error));
+
+            $('#capture-btn').click(function () {
+                const canvas = document.createElement('canvas');
+                canvas.width = currentWebcamElement.videoWidth;
+                canvas.height = currentWebcamElement.videoHeight;
+                canvas.getContext('2d').drawImage(currentWebcamElement, 0, 0, canvas.width, canvas.height);
+                capturedImage = canvas.toDataURL('image/png');
+                sourceDataType = 'webcam'; // Update source type
+                const img = document.createElement('img');
+                img.src = capturedImage;
+                img.style.width = '100%';
+                img.style.height = '100%';
+                img.style.objectFit = 'cover';
+
+                currentWebcamElement.replaceWith(img);
+                currentWebcamElement = img;
+
+                // disable capture button and change the text to "choose referecne driving video or audio" is selected
+                $('#capture-btn').prop('disabled', true);
+                $('#capture-btn').text('Choose a reference video or audio from side panel');
+
+
+
+                updateUI();
+            });
+
+            $('#restart-btn, #output-restart-btn').click(function () {
+                $('#page-2').hide();
+                $('#page-1').show();
+                capturedImage = null;
+                selectedVideoPath = null;
+                selectedImagePath = null;
+                selectedAudioPath = null;
+                sourceDataType = 'webcam'; // Reset source type
+                drivingInputType = null;
+                currentMode = null;
+
+                if (currentWebcamElement.tagName.toLowerCase() === 'img') {
+                    const newVideoElement = originalWebcamElement.cloneNode(true); // Create a new video Element.
+                    currentWebcamElement.replaceWith(newVideoElement);
+                    currentWebcamElement = newVideoElement; // Update the current webcamelement
+                    webcamVideo.srcObject = null; // Clear old source
+                    webcamVideo.src = ''; // Clear old source
+                    webcamVideo.remove(); //remove old element
+                    document.getElementById('page-1').prepend(newVideoElement);
+                    navigator.mediaDevices.getUserMedia({
+                        video: true
+                    })
+                        .then(stream => {
+                            webcamStream = stream;
+                            newVideoElement.srcObject = stream;
+                        })
+                        .catch(error => console.error('Error accessing webcam:', error));
+
+                }
+                // updateUI();
+                $('#submit-btn').hide();
+                $('#submit-btn').prop('disabled', true); // Reset submit button
+                // submit button text
+                $('#submit-btn').text('Submit');
+                $('#capture-btn').show();
+                $('#capture-btn').prop('disabled', false); // Enable capture button
+                //capture button text
+                $('#capture-btn').text('Capture');
+            });
+
+            $('#drawer-toggle').click(function () {
+                $('#drawer-panel').toggleClass('open');
+                updateTitlePosition(); // Update title position on toggle
+            });
+
+            $('.sample-image').click(function () {
+                const img = document.createElement('img');
+                img.src = $(this).data('src');
+                img.style.width = 'auto';
+                img.style.height = '100%';
+                img.style.objectFit = 'cover';
+                img.style.margin = 'auto';
+                img.style.display = 'block';
+                currentWebcamElement.replaceWith(img);
+                currentWebcamElement = img;
+                sourceDataType = 'image'; // Update source type
+                drivingInputType = null;
+                determineMode();
+                // updateUI();
+
+                // disable capture button and change the text to "choose referecne driving video or audio" is selected
+                
+                $('#capture-btn').text('Choose a reference video or audio from side panel');
+                $('#capture-btn').prop('disabled', true);
+                $('#submit-btn').show();
+                $('#submit-btn').prop('disabled', true); // Enable submit button
+
+            });
+
+            $('.video-preview').click(function () {
+                $('.driving-input').removeClass('selected');
+                $(this).addClass('selected');
+                selectedVideoPath = $(this).data('path');
+                drivingInputType = 'video';
+                console.log("drivingInputType:", drivingInputType);
+                console.log("selectedVideoPath:", selectedVideoPath);
+                determineMode();
+                // updateUI();
+
+                //disable and hide capture button 
+                $('#capture-btn').hide();
+                $('#capture-btn').prop('disabled', true); // Disable capture button
+                // enable submit button
+                $('#submit-btn').show();
+                $('#submit-btn').prop('disabled', false); // Enable submit button
+                $('#submit-btn').text('Submit');
+            });
+
+            $('.image-preview').click(function () {
+                $('.driving-input').removeClass('selected');
+                $(this).addClass('selected');
+                selectedImagePath = $(this).data('src');
+                drivingInputType = 'image';
+                console.log("drivingInputType:", selectedImagePath);
+                console.log("selectedImagePath:", drivingInputType);
+                determineMode();
+                // updateUI();
+            });
+
+            $('#audio-selection').on('change', '.audio-checkbox', function () {
+                $('.driving-input').removeClass('selected');
+                $('.audio-preview').removeClass('selected'); // Also clear audio-preview selection
+                $('.audio-checkbox').prop('checked', false); // Uncheck all audio checkboxes
+                $(this).prop('checked', true); // Check the current checkbox
+                $(this).closest('.audio-container').find('.audio-preview').addClass('selected');
+                selectedAudioPath = $(this).data('path');
+                drivingInputType = 'audio';
+                console.log("drivingInputType:", drivingInputType);
+                console.log("selectedAudioPath:", selectedAudioPath);
+                determineMode();
+                //disable and hide capture button 
+                $('#capture-btn').hide();
+                $('#capture-btn').prop('disabled', true); // Disable capture button
+                // enable submit button
+                $('#submit-btn').show();
+                $('#submit-btn').prop('disabled', false); // Enable submit button
+                $('#submit-btn').text('Submit');
+            });
+
+
+        });
+
+        function determineMode() {
+            if (sourceDataType === 'image' || sourceDataType === 'webcam') {
+                if (drivingInputType === 'video') {
+                    currentMode = 'image_to_video';
+                    console.log("Mode: image_to_video");
+                } else if (drivingInputType === 'audio') {
+                    currentMode = 'speech_to_video';
+                    console.log("Mode: speech_to_video");
+                } else if (drivingInputType === 'image') {
+                    currentMode = 'image_to_image';
+                    console.log("Mode: image_to_image");
+                }
+            } else {
+                currentMode = null; // No mode if source isn't image/webcam
+            }
+        }
+
+        let blinkInterval; // store interval ID globally
+
+        // Start blinking
+        function startBlink() {
+            $('#submit-btn').prop('disabled', true);
+            blinkInterval = setInterval(function () {
+                $('#submit-btn').toggleClass('blinking');
+            }, 500);
+        }
+
+        // Stop/reset blinking
+        function resetBlink() {
+            clearInterval(blinkInterval); // stop the interval
+            $('#submit-btn').removeClass('blinking'); // remove blink style
+            $('#submit-btn').prop('disabled', false); // enable if needed
+        }
+
+        $('#submit-btn').click(function () {
+
+            let input_file;
+
+            console.log("currentMode:", currentMode);
+            console.log("selectedVideoPath:", selectedVideoPath);
+            console.log("selectedImagePath:", selectedImagePath);
+            console.log("selectedAudioPath:", selectedAudioPath);
+
+            if (currentMode === 'image_to_video') {
+                if (!selectedVideoPath) {
+                    alert("Please select a reference video or audio.");
+                    return;
+                }
+                input_file = selectedVideoPath; // Use either video or audio path
+            } else if (currentMode === 'image_to_image') {
+                if (!selectedImagePath) {
+                    alert("Please select a reference image.");
+                    return;
+                }
+                input_file = selectedImagePath;
+            } else if (currentMode === 'speech_to_video') {
+                if (!selectedImagePath && !selectedAudioPath) {
+                    alert("Please select a reference audio .");
+                    return;
+                }
+                input_file = selectedAudioPath;
+            } else {
+                alert("Invalid combination of inputs.");
+                return;
+            }
+
+            let startTime = Date.now();
+            let $this = $(this); // Cache $(this) for use in setInterval
+
+            $this.text('Processing : 0s'); // Initial text
+
+            let intervalId = setInterval(function () {
+                let elapsedTime = Math.floor((Date.now() - startTime) / 1000); // Calculate elapsed time in seconds
+                $this.text('Processing : ' + elapsedTime + 's'); // Update text
+            }, 1000);
+
+
+
+            // Update every 1 second
+            $('#submit-btn').prop('disabled', true);
+            // hide capture button
+            $('#capture-btn').hide();
+
+            startBlink(); // Start blinking
+
+            const uuid = generateUUID(); // Generate a unique ID for this submission
+
+            let imageData;
+            if (currentWebcamElement.tagName.toLowerCase() === 'img') {
+                imageData = currentWebcamElement.src; // Use image src if an image is showing
+            } else {
+                const canvas = document.createElement('canvas');
+                canvas.width = currentWebcamElement.videoWidth;
+                canvas.height = currentWebcamElement.videoHeight;
+                canvas.getContext('2d').drawImage(currentWebcamElement, 0, 0, canvas.width, canvas.height);
+                imageData = canvas.toDataURL('image/png'); // Capture from video
+            }
+
+            $.ajax({
+                url: '/process', // Use the unified endpoint
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    image: imageData,
+                    input_file: input_file,
+                    workload_type: currentMode,
+                    uuid: uuid,
+                    // Optionally, add other parameters here if needed
+                }),
+                success: function (data) {
+                    clearInterval(intervalId); // Stop updating time
+                    checkStatus(uuid, currentMode); // Start checking for output availability
+                    resetBlink(); // Stop blinking
+                },
+                error: function (error) {
+                    clearInterval(intervalId); // Stop updating time on error
+                    console.error('Error processing:', error);
+                    $('#submit-btn').text('Submit');
+                    alert("An error occurred during processing.");
+                }
+            });
+
+        });
+
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                const r = Math.random() * 16 | 0,
+                    v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        $('#output-play-button').click(function () {
+            const video = $('#output-video')[0];
+            if (video.paused) {
+                // Check if the video has a source before attempting to play
+                if (video.src) {
+                    video.play();
+                    $(this).hide(); // Hide the button when playing
+                } else {
+                    console.warn("Video has no source to play.");
+                    // Optionally, show an alert or a message to the user
+                    alert("No video source available.");
+                }
+            }
+        });
+
+
+        $('#output-video').click(function () {
+            // Check if the video has a source before attempting to play/pause
+            if (this.src) {
+                if (this.paused) {
+                    this.play();
+                    $('#output-play-button').hide();
+                } else {
+                    this.pause();
+                    $('#output-play-button').show();
+                }
+            } else {
+                console.warn("Video has no source to play/pause.");
+                // Optionally, show an alert or a message to the user
+                alert("No video source available.");
+            }
+        });
+
+        $('#output-video').on('ended', function () {
+            $('#output-play-button').show();
+        });
+
+        $('#output-video').on('play', function () {
+            $('#output-play-button').hide();
+        });
+
+        function checkStatus(uuid, workloadType) {
+            const interval = setInterval(function () {
+                $.ajax({
+                    url: `/status/${uuid}`, // Use the unified status endpoint
+                    type: 'GET',
+                    data: {
+                        type: workloadType
+                    }, // Send workload type for correct output handling
+                    success: function (data) {
+                        if (data.status === 'ready') {
+                            console.log('Output is ready:', data.output_path, "status:", data.status);
+                            clearInterval(interval);
+                            $('#page-1').hide();
+                            $('#page-2').show();
+                            if (workloadType === 'image_to_video') {
+                                $('#output-video').attr('src', data.output_path);
+                                $('#output-video-container').show();
+                                $('#output-image-container').hide();
+                                $('#output-play-button').show(); //show play button after video load.
+                            }
+                            else if (workloadType === 'speech_to_video') {
+                                $('#output-video').attr('src', data.output_path);
+                                $('#output-video-container').show();
+                                $('#output-image-container').hide();
+                                $('#output-play-button').show(); //show play button after video load.
+                            } else if (workloadType === 'image_to_image') {
+                                $('#output-image').attr('src', data.output_path);
+                                $('#output-video-container').hide();
+                                $('#output-image-container').show();
+                            }
+                            $('#submit-btn').text('Submit');
+                            window.scrollTo(0, document.body.scrollHeight);
+                        } else if (data.status === 'error') {
+                            clearInterval(interval);
+                            alert("Error during processing. Please try again.");
+                            $('#submit-btn').text('Submit');
+                            $('#submit-btn').prop('disabled', false);
+                        }
+                    },
+                    error: function (error) {
+                        clearInterval(interval);
+                        console.error('Error checking status:', error);
+                        alert("Error checking processing status.");
+                        $('#submit-btn').text('Submit');
+                        $('#submit-btn').prop('disabled', false);
+                    }
+                });
+            }, 2000);
+        }
+
+        // ... (your existing JavaScript code) ...
+
+        const $drawerPanel = $('#drawer-panel');
+        const $webcamTitle = $('#webcam-title');
+
+        function updateTitlePosition() {
+            if ($drawerPanel.hasClass('open')) {
+                $webcamTitle.css({
+                    left: 'calc(45% + 10%)',
+                    transform: 'translate(-60%, -50%)'
+                });
+            } else {
+                $webcamTitle.css({
+                    left: '45%',
+                    transform: 'translate(-50%, -50%)'
+                });
+            }
+        }
+
+        updateTitlePosition(); // Initial position on page load
+
+        function updateUI() {
+            const $videoSelection = $('#video-selection');
+            const $imageSelection = $('#image-selection');
+            const $audioSelection = $('#audio-selection');
+            const $outputVideoContainer = $('#output-video-container');
+            const $outputImageContainer = $('#output-image-container');
+            const $captureButton = $('#capture-btn');
+            const $inputSelectionsContainer = $('#input-selections-container');
+
+            $videoSelection.hide();
+            $imageSelection.hide();
+            $audioSelection.hide();
+            $outputVideoContainer.hide();
+            $outputImageContainer.hide();
+            $captureButton.show();
+
+            // Show relevant driving inputs based on source
+            if (sourceDataType === 'image' || sourceDataType === 'webcam') {
+                if (drivingInputType === 'video') {
+                    $videoSelection.show();
+                } else if (drivingInputType === 'image') {
+                    $imageSelection.show();
+                } else if (drivingInputType === 'audio') {
+                    $audioSelection.show();
+                } else {
+                    // Show all if no driving input selected yet
+                    $videoSelection.show();
+                    $imageSelection.show();
+                    $audioSelection.show();
+                }
+            }
+
+            // Update UI text and visibility based on input types
+            if (sourceDataType === 'webcam' || sourceDataType === 'image') {
+                if (drivingInputType === 'video') {
+                    currentMode = 'image_to_video';
+                    $captureButton.text('Choose a reference video or audio from side panel');
+                    $('#submit-btn').show();
+                    $('#submit-btn').prop('disabled', !selectedVideoPath && !selectedAudioPath); // Disable if neither is selected
+                    console.log("Mode from update UI: image_to_video");
+                }
+                else if (drivingInputType === 'audio') {
+                    currentMode = 'speech_to_video';
+                    $captureButton.text('Choose a reference video or audio from side panel');
+                    $('#submit-btn').show();
+                    $('#submit-btn').prop('disabled', !selectedVideoPath && !selectedAudioPath); // Disable if neither is selected
+                    console.log("Mode from update UI: speech_to_video");
+                }
+                else if (drivingInputType === 'image') {
+                    currentMode = 'image_to_image';
+                    $captureButton.text('Choose a reference image from side panel');
+                    $('#submit-btn').show();
+                    $('#submit-btn').prop('disabled', !selectedImagePath);
+                    console.log("Mode from update UI: image_to_image");
+                } 
+                $captureButton.prop('disabled', capturedImage);
+            } else {
+                currentMode = null;
+                $captureButton.text('Choose a reference video or audio from side panel');
+                $('#submit-btn').hide();
+                $('#submit-btn').prop('disabled', true);
+            }
+
+        }
+    </script>
+</body>
+
+</html>
