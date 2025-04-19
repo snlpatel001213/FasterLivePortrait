@@ -12,6 +12,9 @@ import base64
 import shutil
 import uuid
 from flask import Flask, request, jsonify, render_template, send_from_directory
+import qrcode
+
+processing_status = {}
 
 # Assume these paths are correctly set based on your environment
 FFMPEG = "ffmpeg"  # Or the full path to ffmpeg if needed
@@ -20,9 +23,19 @@ DEFAULT_CONFIG_ONNX_MP = "configs/onnx_mp_infer.yaml"
 DEFAULT_CONFIG_TRT = "configs/trt_infer.yaml"
 DEFAULT_CONFIG_TRT_MP = "configs/trt_mp_infer.yaml"
 VIDEO_OUTPUT_DIR = "/FasterLivePortrait/results/"  # Ensure this directory exists
+QR_FOLDER =  "static/QR"
 
 app = Flask(__name__)
 live_portrait_pipeline = None
+
+# SDK initialization
+from imagekitio import ImageKit
+
+imagekit = ImageKit(
+    private_key='private_16/Fg3qimejcZqR7Pe0JtqCZW1k=',
+    public_key='public_4nIolQXz+Ouu6zhTJnl39luJgg8=',
+    url_endpoint='https://ik.imagekit.io/liveportrait'
+)
 
 class LivePortraitAnimator:
     def __init__(self, config_path=DEFAULT_CONFIG_ONNX, use_mediapipe=False):
@@ -92,7 +105,7 @@ class LivePortraitAnimator:
         Takes a source image and a driving image to generate a new animated image.
         """
         output_path = self._ensure_directory(output_path)
-        print(f">>> Processing image to image for UUID: {uuid}, Source Image: {source_image_path}, Driving Image: {driving_image_path}, Output: {output_path}")
+        print(f"Processing image to image for UUID: {uuid}, Source Image: {source_image_path}, Driving Image: {driving_image_path}, Output: {output_path}")
         args_user = {
             'source':  source_image_path ,
             'driving':driving_image_path ,
@@ -166,7 +179,6 @@ def save_input_data(image_data, input_file_path, uuid_str, input_type="video"):
             source_file_name = image_data.split('/')[-1]
             # //FasterLivePortrait/assets/examples/assets/examples
             image_data = os.path.join("/FasterLivePortrait/static/source",source_file_name)
-            print("Saving image data from:", image_data, "to:", image_filename)
             shutil.copy(image_data, image_filename)
         return image_filename, None
     elif input_type == "video":
@@ -267,11 +279,62 @@ def status(uuid_str):
 def serve_output(filename):
     return send_from_directory(VIDEO_OUTPUT_DIR, filename)
 
+def upload_file_to_imagekit(file_path):
+    if not "/" in file_path:
+        file_path = os.path.join(VIDEO_OUTPUT_DIR, file_path+".mp4")
+    print(f"Uploading file to ImageKit: {file_path}")
+    try:
+        response = imagekit.upload_file(
+                    file=open(file_path, "rb"),
+                    file_name=file_path.split('/')[-1],
+        )
+        print(f"File uploaded to ImageKit: {response.response_metadata.raw}")
+        return response.response_metadata.raw["url"]
+    except Exception as e:
+        print(f"Error uploading file to ImageKit: {e}")
+        return None
+
+@app.route('/generate_qr', methods=['POST'])
+def generate_qr():
+    data = request.get_json()
+    uuid_value = data.get('uuid')
+    # uuid_value = "cf2ed515-47ad-4e68-8b0b-71c65c762f6a"
+    print(f"Generating QR code for UUID: {uuid_value}")
+    if not uuid_value:
+        return jsonify({'error': 'Missing UUID'}), 400
+
+
+    output_url = upload_file_to_imagekit(os.path.join( VIDEO_OUTPUT_DIR, uuid_value+'_output.mp4'))
+    print(f"Uploading file to ImageKit: {output_url}")
+    if not output_url:
+        return jsonify({'error': 'Failed to upload file to ImageKit'}), 500
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(output_url)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+    qr_filename = f"{uuid_value}.png"
+    qr_path = os.path.join(QR_FOLDER, qr_filename)
+    img.save(qr_path)
+    print(f"QR code saved to {qr_path}")
+
+    qr_code_url = request.url_root + os.path.join(QR_FOLDER, qr_filename)
+    print(f"Generated QR code URL: {qr_code_url}")
+    return jsonify({'qr_code_url': qr_code_url})
+
+
 if __name__ == '__main__':
     os.makedirs(VIDEO_OUTPUT_DIR, exist_ok=True)
     animator_init = LivePortraitAnimator(config_path="trt")
     live_portrait_pipeline = animator_init.pipeline # Initialize the pipeline once
     app.run(debug=True, host="0.0.0.0", port=9898, ssl_context='adhoc')
+    # print(generate_qr())
+    # upload_file_to_imagekit("/FasterLivePortrait/results/0c10b5fc-e82f-427e-a851-cb3179abe4d6_output.mp4")
     
 
 # if __name__ == '__main__':
